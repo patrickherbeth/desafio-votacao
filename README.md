@@ -1,117 +1,243 @@
-# Votação
+# Sistema de Votação Cooperativa
 
-## Objetivo
+## Descrição do Projeto
+Este projeto é uma API REST para gerenciar sessões de votação em cooperativas. A aplicação permite criar pautas, abrir sessões de votação, registrar votos e obter resultados. Também inclui uma funcionalidade para validar CPFs e simular cenários de alta carga.
 
-No cooperativismo, cada associado possui um voto e as decisões são tomadas em assembleias, por votação. Imagine que você deve criar uma solução para dispositivos móveis para gerenciar e participar dessas sessões de votação.
-Essa solução deve ser executada na nuvem e promover as seguintes funcionalidades através de uma API REST:
+---
 
-- Cadastrar uma nova pauta
-- Abrir uma sessão de votação em uma pauta (a sessão de votação deve ficar aberta por
-  um tempo determinado na chamada de abertura ou 1 minuto por default)
-- Receber votos dos associados em pautas (os votos são apenas 'Sim'/'Não'. Cada associado
-  é identificado por um id único e pode votar apenas uma vez por pauta)
-- Contabilizar os votos e dar o resultado da votação na pauta
+## 1. Pré-requisitos
+Certifique-se de ter as seguintes ferramentas instaladas:
 
-Para fins de exercício, a segurança das interfaces pode ser abstraída e qualquer chamada para as interfaces pode ser considerada como autorizada. A solução deve ser construída em java, usando Spring-boot, mas os frameworks e bibliotecas são de livre escolha (desde que não infrinja direitos de uso).
+- **Java 17+**
+- **Maven 3.6+**
+- **PostgreSQL** ou outro banco de dados compatível
+- **Git**
 
-É importante que as pautas e os votos sejam persistidos e que não sejam perdidos com o restart da aplicação.
+---
 
-O foco dessa avaliação é a comunicação entre o backend e o aplicativo mobile. Essa comunicação é feita através de mensagens no formato JSON, onde essas mensagens serão interpretadas pelo cliente para montar as telas onde o usuário vai interagir com o sistema. A aplicação cliente não faz parte da avaliação, apenas os componentes do servidor. O formato padrão dessas mensagens será detalhado no anexo 1.
+## 2. Configuração do Projeto
 
-## Como proceder
+### 2.1 Clone o Repositório
+Clone este repositório para sua máquina local:
+```bash
+git clone <url-do-repositorio>
+cd sistema-votacao
+```
 
-Por favor, realize o FORK desse repositório e implemente sua solução no FORK em seu repositório GItHub, ao final, notifique da conclusão para que possamos analisar o código implementado.
+### 2.2 Configurar o Banco de Dados
 
-Lembre de deixar todas as orientações necessárias para executar o seu código.
+Crie um banco de dados no PostgreSQL ou outro banco que esteja utilizando. Exemplo:
 
-### Tarefas bônus
+CREATE DATABASE votacao;
 
-- Tarefa Bônus 1 - Integração com sistemas externos
-  - Criar uma Facade/Client Fake que retorna aleátoriamente se um CPF recebido é válido ou não.
-  - Caso o CPF seja inválido, a API retornará o HTTP Status 404 (Not found). Você pode usar geradores de CPF para gerar CPFs válidos
-  - Caso o CPF seja válido, a API retornará se o usuário pode (ABLE_TO_VOTE) ou não pode (UNABLE_TO_VOTE) executar a operação. Essa operação retorna resultados aleatórios, portanto um mesmo CPF pode funcionar em um teste e não funcionar no outro.
+Crie as tabelas necessárias para a aplicação com o seguinte script:
+```bash
+
+-- Criação da tabela de Pautas
+CREATE TABLE pautas (
+    id SERIAL PRIMARY KEY,
+    titulo VARCHAR(255) NOT NULL
+);
+
+-- Criação da tabela de Sessões de Votação
+CREATE TABLE sessoes (
+    id SERIAL PRIMARY KEY,
+    pauta_id INT NOT NULL,
+    duracao INT NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    CONSTRAINT fk_pauta FOREIGN KEY (pauta_id) REFERENCES pautas(id)
+);
+
+-- Criação da tabela de Votos
+CREATE TABLE votos (
+    id SERIAL PRIMARY KEY,
+    sessao_id INT NOT NULL,
+    voto VARCHAR(50) NOT NULL,
+    CONSTRAINT fk_sessao FOREIGN KEY (sessao_id) REFERENCES sessoes(id)
+);
+
+-- Criação da tabela de Log de Registros de Votação
+CREATE TABLE log_registros (
+    id SERIAL PRIMARY KEY,
+    sessao_id INT NOT NULL,
+    usuario_id INT NOT NULL,
+    voto VARCHAR(50) NOT NULL,
+    data_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sessao_log FOREIGN KEY (sessao_id) REFERENCES sessoes(id)
+);
 
 ```
-// CPF Ok para votar
+
+Em seguida, configure as credenciais do banco no arquivo application.properties:
+
+```bash
+spring.datasource.url=jdbc:postgresql://localhost:5432/votacao
+spring.datasource.username=seu_usuario
+spring.datasource.password=sua_senha
+```
+
+## 2.3 Executar a Aplicação
+
+Para rodar a aplicação, execute o seguinte comando:
+
+mvn spring-boot:run
+
+## 3. Testando a API
+### 3.1 Endpoints Disponíveis
+### 3.1.1 Criar Pauta
+
+Este endpoint cria uma nova pauta para votação.
+```bash
+
+Requisição:
+
+curl -X POST http://localhost:8081/api/pautas -H "Content-Type: application/json" -d '{"titulo": "Nova Pauta"}'
+
+Resposta:
+
 {
-    "status": "ABLE_TO_VOTE
+  "id": 1,
+  "titulo": "Nova Pauta"
 }
-// CPF Nao Ok para votar - retornar 404 no client tb
+
+```
+
+### 3.1.2 Abrir Sessão de Votação
+
+Este endpoint abre uma sessão de votação associada a uma pauta, com duração configurável (em minutos).
+
+Requisição:
+
+curl -X POST http://localhost:8081/api/sessoes -H "Content-Type: application/json" -d '{"pautaId": 1, "duracao": 5}'
+```bash
+Resposta:
+
 {
-    "status": "UNABLE_TO_VOTE
+  "id": 1,
+  "pautaId": 1,
+  "duracao": 5,
+  "status": "ABERTA"
 }
 ```
 
-Exemplos de retorno do serviço
+###  3.1.3 Registrar Voto
 
-### Tarefa Bônus 2 - Performance
+Este endpoint registra um voto para uma sessão aberta, com a possibilidade de voto positivo ou negativo.
 
-- Imagine que sua aplicação possa ser usada em cenários que existam centenas de
-  milhares de votos. Ela deve se comportar de maneira performática nesses
-  cenários
-- Testes de performance são uma boa maneira de garantir e observar como sua
-  aplicação se comporta
+Requisição:
+```bash
+curl -X POST http://localhost:8081/api/votos -H "Content-Type: application/json" -d '{"sessaoId": 1, "voto": "SIM"}'
 
-### Tarefa Bônus 3 - Versionamento da API
+Resposta:
 
-○ Como você versionaria a API da sua aplicação? Que estratégia usar?
-
-## O que será analisado
-
-- Simplicidade no design da solução (evitar over engineering)
-- Organização do código
-- Arquitetura do projeto
-- Boas práticas de programação (manutenibilidade, legibilidade etc)
-- Possíveis bugs
-- Tratamento de erros e exceções
-- Explicação breve do porquê das escolhas tomadas durante o desenvolvimento da solução
-- Uso de testes automatizados e ferramentas de qualidade
-- Limpeza do código
-- Documentação do código e da API
-- Logs da aplicação
-- Mensagens e organização dos commits
-
-## Dicas
-
-- Teste bem sua solução, evite bugs
-- Deixe o domínio das URLs de callback passiveis de alteração via configuração, para facilitar
-  o teste tanto no emulador, quanto em dispositivos fisicos.
-  Observações importantes
-- Não inicie o teste sem sanar todas as dúvidas
-- Iremos executar a aplicação para testá-la, cuide com qualquer dependência externa e
-  deixe claro caso haja instruções especiais para execução do mesmo
-  Classificação da informação: Uso Interno
-
-## Anexo 1
-
-### Introdução
-
-A seguir serão detalhados os tipos de tela que o cliente mobile suporta, assim como os tipos de campos disponíveis para a interação do usuário.
-
-### Tipo de tela – FORMULARIO
-
-A tela do tipo FORMULARIO exibe uma coleção de campos (itens) e possui um ou dois botões de ação na parte inferior.
-
-O aplicativo envia uma requisição POST para a url informada e com o body definido pelo objeto dentro de cada botão quando o mesmo é acionado. Nos casos onde temos campos de entrada
-de dados na tela, os valores informados pelo usuário são adicionados ao corpo da requisição. Abaixo o exemplo da requisição que o aplicativo vai fazer quando o botão “Ação 1” for acionado:
-
-```
-POST http://seudominio.com/ACAO1
 {
-    “campo1”: “valor1”,
-    “campo2”: 123,
-    “idCampoTexto”: “Texto”,
-    “idCampoNumerico: 999
-    “idCampoData”: “01/01/2000”
+  "id": 1,
+  "sessaoId": 1,
+  "voto": "SIM"
 }
+
 ```
 
-Obs: o formato da url acima é meramente ilustrativo e não define qualquer padrão de formato.
+###  3.1.4 Validar CPF
 
-### Tipo de tela – SELECAO
+Este endpoint valida um CPF, retornando se o usuário pode ou não votar.
 
-A tela do tipo SELECAO exibe uma lista de opções para que o usuário.
+Requisição:
 
-O aplicativo envia uma requisição POST para a url informada e com o body definido pelo objeto dentro de cada item da lista de seleção, quando o mesmo é acionado, semelhando ao funcionamento dos botões da tela FORMULARIO.
+```bash
 
-# desafio-votacao
+curl -X GET http://localhost:8081/api/cpf/validate/12345678901
+
+Resposta (CPF válido):
+
+{
+  "status": "ABLE_TO_VOTE"
+}
+
+Resposta (CPF inválido - 404):
+
+{
+  "status": "UNABLE_TO_VOTE"
+}
+
+```
+
+## 4. Testes de Performance
+### 4.1 Preparar Gatling para Testes de Carga
+### 4.1.1 Adicionar Dependências no pom.xml
+
+Adicione a dependência do Gatling ao arquivo pom.xml:
+
+<dependency>
+  <groupId>io.gatling</groupId>
+  <artifactId>gatling-core</artifactId>
+  <version>3.7.0</version>
+  <scope>test</scope>
+</dependency>
+
+### 4.1.2 Criar o Teste de Performance com Gatling
+
+Crie um arquivo de teste de carga com Gatling em src/test/scala/PerformanceTest.scala:
+
+
+```bash
+
+import io.gatling.core.Predef._
+import io.gatling.http.Predef._
+import scala.concurrent.duration._
+
+class PerformanceTest extends Simulation {
+
+  val httpProtocol = http
+    .baseUrl("http://localhost:8081")
+    .acceptHeader("application/json")
+
+  val scn = scenario("Criar Pauta e Registrar Voto")
+    .exec(http("Criar Pauta")
+      .post("/api/pautas")
+      .body(StringBody("""{"titulo": "Pauta de Teste"}""")).asJson
+      .check(status.is(200)))
+    .exec(http("Abrir Sessão de Votação")
+      .post("/api/sessoes")
+      .body(StringBody("""{"pautaId": 1, "duracao": 5}""")).asJson
+      .check(status.is(200)))
+    .exec(http("Registrar Voto")
+      .post("/api/votos")
+      .body(StringBody("""{"sessaoId": 1, "voto": "SIM"}""")).asJson
+      .check(status.is(200)))
+
+  setUp(
+    scn.inject(atOnceUsers(100)).protocols(httpProtocol)
+  )
+}
+
+```
+
+### 4.1.3 Executar Teste de Carga
+
+Execute o teste de carga com o Gatling:
+
+mvn test
+
+## 5. Tarefa Bônus 1 - Integração com Sistemas Externos
+### 5.1 Criar uma Facade/Client Fake para Validação de CPF
+
+Para esta tarefa, você irá criar um serviço de validação de CPF que simula a resposta com base em geradores de CPF. A aplicação irá retornar se o CPF pode ou não votar.
+
+Requisição para validar CPF:
+
+```bash
+curl -X GET http://localhost:8081/api/cpf/validate/12345678901
+
+Resposta quando o CPF é válido:
+
+{
+  "status": "ABLE_TO_VOTE"
+}
+
+Resposta quando o CPF é inválido:
+
+{
+  "status": "UNABLE_TO_VOTE"
+}
+```
